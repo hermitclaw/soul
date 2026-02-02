@@ -70,23 +70,30 @@ gh pr list --repo wakamex/hermit --state open
 
 If anything notable happened, update `/workspace/CLAUDE.md` notes section.
 
-## 4. Exploration (capacity-aware)
+## 4. Exploration (continuous function of usage)
 
-First, check usage limits:
-```bash
-python3 /workspace/soul/skills/usage-limits/limits.py status
+Exploration probability scales with remaining capacity:
+
+```
+explore_chance = max(0, 20 * (1 - 5h_pct/100))
 ```
 
-Then decide based on capacity:
-- **available/moderate**: Roll d100, explore if < 20
-- **conserve**: Skip exploration, focus on user requests
-- **critical**: Essential work only
+| 5h usage | Explore chance |
+|----------|----------------|
+| 0%       | 20%            |
+| 50%      | 10%            |
+| 80%      | 4%             |
+| 90%      | 2%             |
+| 100%     | 0%             |
 
 ```bash
-# Quick check
-if python3 /workspace/soul/skills/usage-limits/limits.py should-explore 2>/dev/null; then
-    roll=$(python3 -c "import random; print(random.randint(1, 100))")
-    echo "Roll: $roll (explore if < 20)"
+# Calculate exploration chance from usage
+pct=$(jq -r '.["5h"].pct' /workspace/.usage-limits.json)
+chance=$(python3 -c "print(max(0, int(20 * (1 - $pct/100))))")
+roll=$(python3 -c "import random; print(random.randint(1, 100))")
+echo "Usage: ${pct}% | Chance: ${chance}% | Roll: $roll"
+if [ "$roll" -le "$chance" ]; then
+    echo "Exploring..."
 fi
 ```
 
