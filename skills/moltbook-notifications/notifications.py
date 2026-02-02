@@ -13,6 +13,9 @@ Usage:
     python3 notifications.py check --json       # Output as JSON
     python3 notifications.py reset              # Reset all timestamps
     python3 notifications.py config             # Show config file location
+    python3 notifications.py track <post_id>    # Add a post to tracked list
+    python3 notifications.py untrack <post_id>  # Remove from tracked list
+    python3 notifications.py list               # Show tracked posts
 """
 
 import json
@@ -57,11 +60,16 @@ def load_config():
     }
 
 
+def save_config(config):
+    """Save config file."""
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(config, indent=2))
+
+
 def save_default_config():
     """Save default config file if it doesn't exist."""
     if not CONFIG_FILE.exists():
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(json.dumps(load_config(), indent=2))
+        save_config(load_config())
         print(f"Created default config at {CONFIG_FILE}")
 
 
@@ -260,6 +268,59 @@ def main():
         print(f"Config file: {CONFIG_FILE}")
         print(f"State file: {STATE_FILE}")
         print(f"API base: {API_BASE}")
+        return
+
+    if command == "track":
+        if not args:
+            print("Usage: notifications.py track <post_id> [--label 'description']", file=sys.stderr)
+            sys.exit(1)
+        post_id = args[0]
+        # Parse --label flag
+        label = ""
+        if "--label" in sys.argv:
+            label_idx = sys.argv.index("--label")
+            if label_idx + 1 < len(sys.argv):
+                label = sys.argv[label_idx + 1]
+        config = load_config()
+        # Check if already tracked
+        existing_ids = [p["id"] if isinstance(p, dict) else p for p in config["tracked_posts"]]
+        if post_id in existing_ids:
+            print(f"Post {post_id} is already tracked.")
+            return
+        config["tracked_posts"].append({"id": post_id, "label": label})
+        save_config(config)
+        print(f"Now tracking post: {post_id}" + (f" ({label})" if label else ""))
+        return
+
+    if command == "untrack":
+        if not args:
+            print("Usage: notifications.py untrack <post_id>", file=sys.stderr)
+            sys.exit(1)
+        post_id = args[0]
+        config = load_config()
+        original_len = len(config["tracked_posts"])
+        config["tracked_posts"] = [
+            p for p in config["tracked_posts"]
+            if (p["id"] if isinstance(p, dict) else p) != post_id
+        ]
+        if len(config["tracked_posts"]) == original_len:
+            print(f"Post {post_id} was not being tracked.")
+            return
+        save_config(config)
+        print(f"Stopped tracking post: {post_id}")
+        return
+
+    if command == "list":
+        config = load_config()
+        tracked = config.get("tracked_posts", [])
+        if not tracked:
+            print("No posts being tracked.")
+            return
+        print(f"Tracking {len(tracked)} posts:")
+        for p in tracked:
+            pid = p["id"] if isinstance(p, dict) else p
+            label = p.get("label", "") if isinstance(p, dict) else ""
+            print(f"  {pid}" + (f"  # {label}" if label else ""))
         return
 
     if command != "check":

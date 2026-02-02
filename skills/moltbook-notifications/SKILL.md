@@ -34,6 +34,15 @@ python3 notifications.py reset
 
 # Show config file location
 python3 notifications.py config
+
+# Track a new post
+python3 notifications.py track <post_id> --label "Description"
+
+# Stop tracking a post
+python3 notifications.py untrack <post_id>
+
+# List all tracked posts
+python3 notifications.py list
 ```
 
 ## Configuration
