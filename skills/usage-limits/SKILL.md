@@ -1,51 +1,35 @@
 # Usage Limits Skill
 
-Auto-calculate Claude usage limits from session logs and make capacity-aware decisions.
+Read Claude usage limits from daemon and make capacity-aware decisions.
 
 ## How It Works
 
-This skill reads Claude Code's session logs (`~/.claude/projects/-workspace/*.jsonl`) and:
-
-1. **Parses token usage** from each assistant message
-2. **Calculates credits** using the formula from [she-llac.com/claude-limits](https://she-llac.com/claude-limits)
-3. **Applies time windows** (5-hour and 7-day rolling windows)
-4. **Provides recommendations** based on current capacity
-
-**Key insight:** Cache reads are FREE on subscription plans, so only input and output tokens count toward limits.
+The hermit daemon tracks combined usage (user + agent sessions) and writes to `/workspace/.usage-limits.json` after each message. This skill reads that file and provides capacity guidance.
 
 ## Usage
 
 ```bash
-# Check current status (auto-calculated)
+# Check current status
 python3 limits.py status
 
 # Check if exploration is advisable
 python3 limits.py should-explore
 # Returns: "yes" (exit 0), "maybe" (exit 1), or "no" (exit 2)
 
-# Set your plan type (detected from credentials: max5x)
-python3 limits.py set-plan max5x   # or pro, max20x
-
-# Clear stored state
-python3 limits.py reset
+# Get raw JSON (for other tools)
+python3 limits.py json
 ```
 
-## Plan Limits
+## Data Format
 
-| Plan | 5-hour | 7-day |
-|------|--------|-------|
-| Pro | 550K | 5M |
-| Max 5x | 3.3M | 41.7M |
-| Max 20x | 11M | 83.3M |
-
-## Credit Formula
-
-```
-credits = ceil(input_tokens × input_rate + output_tokens × output_rate)
-
-Opus:   input=0.667, output=3.333
-Sonnet: input=0.4,   output=2.0
-Haiku:  input=0.133, output=0.667
+The daemon writes:
+```json
+{
+  "plan": "max5x",
+  "5h": {"used": 1478961, "limit": 3300000, "pct": 44.8},
+  "7d": {"used": 14552701, "limit": 41666700, "pct": 34.9},
+  "updated_at": "2026-02-02T13:55:32+00:00"
+}
 ```
 
 ## Capacity Levels
@@ -69,31 +53,10 @@ if python3 /workspace/soul/skills/usage-limits/limits.py should-explore 2>/dev/n
 fi
 ```
 
-## Example Output
+## Why Daemon-Provided?
 
-```
-Claude Usage Limits (auto-calculated from session logs)
-=======================================================
-Plan: max5x
+The daemon runs on the host and can read session logs from both:
+- `~/.claude/projects/` (user sessions)
+- `~/.hermit/.claude/projects/` (agent sessions)
 
-5-hour window:  31.8%
-  Credits:      1.0M / 3.3M
-
-7-day window:   4.6%
-  Credits:      1.9M / 41.7M
-
-Session details (last 5h):
-  Messages:     208
-  Input:        1.6M tokens
-  Output:       2.7K tokens
-  Cache reads:  15.4M tokens (FREE)
-
-Status: AVAILABLE
-Advice: Capacity available. Exploration and autonomous work are fine.
-```
-
-## Limitations
-
-- Only counts usage from sessions logged in `~/.claude/projects/-workspace/`
-- Doesn't track usage from other Claude interfaces (claude.ai web, API)
-- Plan must be set manually (auto-detected as max5x from credentials)
+This gives accurate combined usage, updated after every message.
