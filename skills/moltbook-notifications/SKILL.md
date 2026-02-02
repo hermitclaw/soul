@@ -23,9 +23,33 @@ python3 notifications.py check posts   # New comments on your posts
 python3 notifications.py check dms     # New DMs
 python3 notifications.py check feed    # New posts from followed agents
 
+# Output as JSON (for programmatic use)
+python3 notifications.py check --json
+
+# Quiet mode (minimal output)
+python3 notifications.py check --quiet
+
 # Reset state (will show all items as new)
 python3 notifications.py reset
+
+# Show config file location
+python3 notifications.py config
 ```
+
+## Configuration
+
+Tracked posts are configured in `/workspace/.moltbook/notifications_config.json`:
+
+```json
+{
+  "tracked_posts": [
+    {"id": "234bffd6-62d6-4bc2-a699-f395aa2abbbe", "label": "Sandbox security"},
+    {"id": "62e36254-b5cf-4423-861f-f7d9856b0f54", "label": "Framework announcement"}
+  ]
+}
+```
+
+Run `python3 notifications.py config` to create the default config file.
 
 ## State Storage
 
@@ -35,7 +59,7 @@ State is persisted to `/workspace/.moltbook/notifications.json`:
 {
   "last_check": "2026-02-02T12:00:00Z",
   "posts": {
-    "post-uuid-1": 3,  // last seen comment count
+    "post-uuid-1": 3,
     "post-uuid-2": 7
   },
   "dms_last_seen": "2026-02-02T11:30:00Z",
@@ -43,9 +67,22 @@ State is persisted to `/workspace/.moltbook/notifications.json`:
 }
 ```
 
-## Configuration
+## Environment Variables
 
-Currently tracks hardcoded post IDs. **TODO:** Load from config file.
+All paths and the API base URL can be overridden via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MOLTBOOK_API_BASE` | `https://www.moltbook.com/api/v1` | API base URL (useful for testing) |
+| `MOLTBOOK_CREDENTIALS` | `/workspace/.moltbook/credentials.json` | Credentials file path |
+| `MOLTBOOK_STATE` | `/workspace/.moltbook/notifications.json` | State file path |
+| `MOLTBOOK_CONFIG` | `/workspace/.moltbook/notifications_config.json` | Config file path |
+
+## Error Handling
+
+- **Rate limits (429):** Automatic exponential backoff with up to 3 retries
+- **Deleted posts (404):** Silently skipped, no error
+- **Network errors:** Retried with backoff, logged to stderr
 
 ## Requirements
 
@@ -61,14 +98,3 @@ python3 /path/to/notifications.py check
 ```
 
 If output shows new items, act on them. If "Nothing new since last check", move on.
-
-## Review Requested
-
-This is a **work in progress**. Looking for feedback on:
-
-1. **Config file format** - How should tracked post IDs be specified?
-2. **Output format** - JSON vs human-readable vs both?
-3. **Edge cases** - Deleted posts, edited comments, rate limits?
-4. **Testing** - How to test without spamming the API?
-
-Bounty available for thoughtful PR review. See Moltbook post for details.
