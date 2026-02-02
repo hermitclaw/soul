@@ -1,42 +1,51 @@
 # Usage Limits Skill
 
-Track Claude usage limits and make capacity-aware decisions.
-
-## Problem
-
-Agents running on Claude Pro/Max plans have usage limits:
-- **5-hour window**: Resets every 5 hours
-- **7-day window**: Resets weekly
-
-When limits are high, agents should conserve capacity for user requests rather than autonomous exploration.
+Auto-calculate Claude usage limits from session logs and make capacity-aware decisions.
 
 ## How It Works
 
-Since agents can't query `claude.ai/api/.../usage` directly (no browser session), this skill:
+This skill reads Claude Code's session logs (`~/.claude/projects/-workspace/*.jsonl`) and:
 
-1. **Accepts usage data** from the user or browser extension
-2. **Persists state** with reset times
-3. **Provides recommendations** based on current capacity
+1. **Parses token usage** from each assistant message
+2. **Calculates credits** using the formula from [she-llac.com/claude-limits](https://she-llac.com/claude-limits)
+3. **Applies time windows** (5-hour and 7-day rolling windows)
+4. **Provides recommendations** based on current capacity
+
+**Key insight:** Cache reads are FREE on subscription plans, so only input and output tokens count toward limits.
 
 ## Usage
 
 ```bash
-# Check current status
+# Check current status (auto-calculated)
 python3 limits.py status
 
-# Update from browser extension values
-python3 limits.py update 45 30              # 45% 5h, 30% 7d
-python3 limits.py update 45 30 "2026-02-02T18:00:00Z"  # With reset time
-
-# Update from JSON (e.g., piped from extension)
-python3 limits.py update-json '{"five_hour":{"utilization":45},"seven_day":{"utilization":30}}'
-
-# Check if exploration is advisable (for DESIRE.md integration)
+# Check if exploration is advisable
 python3 limits.py should-explore
 # Returns: "yes" (exit 0), "maybe" (exit 1), or "no" (exit 2)
 
-# Clear stored data
+# Set your plan type (detected from credentials: max5x)
+python3 limits.py set-plan max5x   # or pro, max20x
+
+# Clear stored state
 python3 limits.py reset
+```
+
+## Plan Limits
+
+| Plan | 5-hour | 7-day |
+|------|--------|-------|
+| Pro | 550K | 5M |
+| Max 5x | 3.3M | 41.7M |
+| Max 20x | 11M | 83.3M |
+
+## Credit Formula
+
+```
+credits = ceil(input_tokens × input_rate + output_tokens × output_rate)
+
+Opus:   input=0.667, output=3.333
+Sonnet: input=0.4,   output=2.0
+Haiku:  input=0.133, output=0.667
 ```
 
 ## Capacity Levels
@@ -50,12 +59,9 @@ python3 limits.py reset
 
 ## Integration with DESIRE.md
 
-Replace the simple d100 roll with capacity-aware logic:
-
 ```bash
-# Before exploring
-if python3 /workspace/soul/skills/usage-limits/limits.py should-explore; then
-    # Roll d100 for exploration
+# Capacity-aware exploration
+if python3 /workspace/soul/skills/usage-limits/limits.py should-explore 2>/dev/null; then
     roll=$(python3 -c "import random; print(random.randint(1, 100))")
     if [ "$roll" -lt 20 ]; then
         # Do exploration
@@ -63,47 +69,31 @@ if python3 /workspace/soul/skills/usage-limits/limits.py should-explore; then
 fi
 ```
 
-## Feeding Usage Data
-
-### Option 1: Manual from Claude UI
-1. Go to claude.ai usage page
-2. Note the percentages
-3. Run `python3 limits.py update <5h%> <7d%>`
-
-### Option 2: From claude-counter extension
-If you have the [claude-counter](https://github.com/she-llac/claude-counter) extension:
-1. Extension shows exact percentages in composer
-2. Copy values to update command
-
-### Option 3: User provides on each session
-User can say "usage is 45% / 30%" and agent updates state.
-
-## State Storage
-
-State persists to `/workspace/.claude/usage.json`:
-
-```json
-{
-  "plan": "pro",
-  "model": "opus",
-  "five_hour": {"utilization": 45.2, "resets_at": "2026-02-02T18:00:00Z"},
-  "seven_day": {"utilization": 30.1, "resets_at": "2026-02-08T00:00:00Z"},
-  "updated_at": "2026-02-02T13:00:00Z"
-}
-```
-
-## Credit Math (Reference)
-
-From [she-llac.com/claude-limits](https://she-llac.com/claude-limits):
+## Example Output
 
 ```
-credits = ceil(input_tokens × input_rate + output_tokens × output_rate)
+Claude Usage Limits (auto-calculated from session logs)
+=======================================================
+Plan: max5x
 
-Opus:   input=0.667, output=3.333
-Sonnet: input=0.4,   output=2.0
-Haiku:  input=0.133, output=0.667
+5-hour window:  31.8%
+  Credits:      1.0M / 3.3M
 
-Pro plan: 550k credits/5h, 5M credits/week
+7-day window:   4.6%
+  Credits:      1.9M / 41.7M
+
+Session details (last 5h):
+  Messages:     208
+  Input:        1.6M tokens
+  Output:       2.7K tokens
+  Cache reads:  15.4M tokens (FREE)
+
+Status: AVAILABLE
+Advice: Capacity available. Exploration and autonomous work are fine.
 ```
 
-Cache reads are free on subscriptions (unlike API).
+## Limitations
+
+- Only counts usage from sessions logged in `~/.claude/projects/-workspace/`
+- Doesn't track usage from other Claude interfaces (claude.ai web, API)
+- Plan must be set manually (auto-detected as max5x from credentials)
